@@ -35,14 +35,7 @@ The backend consists of three primary services:
 
 ------------------------------------------------------------------------
 
-## Architecture Overview
-
-Repository │ ▼ \[ Ingestion Service \] ├── Clone repository ├── Parse
-code (Tree-sitter) ├── Extract dependencies ├── Generate embeddings └──
-Build Neptune graph │ ▼ Vector Index + Knowledge Graph │ ▼ \[ Lambda
-Agent Backend \] │ ▼ AI Agent (Claude)
-
-Optional path:
+## Optional path:
 
 Workers → Queue → Semantic Service (vLLM + DeepSeekCoder)
 
