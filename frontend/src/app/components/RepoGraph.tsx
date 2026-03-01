@@ -13,8 +13,30 @@ interface Props {
   sessionId: string;
 }
 
+interface GraphNode {
+  id: string;
+  name: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  fx?: number;
+  fy?: number;
+}
+
+interface GraphLink {
+  source: string;
+  target: string;
+}
+
 export default function RepoGraph({ sessionId }: Props) {
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [graphData, setGraphData] = useState<{
+    nodes: GraphNode[];
+    links: GraphLink[];
+  }>({
+    nodes: [],
+    links: [],
+  });
+
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -32,65 +54,41 @@ export default function RepoGraph({ sessionId }: Props) {
 
         const data = await response.json();
 
-        console.log("API Nodes:", data.nodes);
+        if (!data.nodes || data.nodes.length === 0) return;
 
-        if (!data.nodes || data.nodes.length === 0) {
-          console.warn("No nodes returned");
-          return;
-        }
-
-        // -----------------------------
-        // BUILD PATH-BASED TREE
-        // -----------------------------
         const nodesById: Record<string, any> = {};
 
-        // Artificial ROOT
         nodesById["ROOT"] = {
           id: "ROOT",
           label: "Repository",
           type: "folder",
-          children: []
+          children: [],
         };
 
-        // Register all nodes
         data.nodes.forEach((n: any) => {
-          nodesById[n.id] = {
-            ...n,
-            children: []
-          };
+          nodesById[n.id] = { ...n, children: [] };
         });
 
-        // Attach children using path structure
         data.nodes.forEach((n: any) => {
           const parts = n.id.split("/");
-
           if (parts.length === 1) {
-            // top-level
             nodesById["ROOT"].children.push(nodesById[n.id]);
           } else {
             const parentPath = parts.slice(0, -1).join("/");
-
             if (nodesById[parentPath]) {
               nodesById[parentPath].children.push(nodesById[n.id]);
             } else {
-              // fallback
               nodesById["ROOT"].children.push(nodesById[n.id]);
             }
           }
         });
 
         const root = d3.hierarchy(nodesById["ROOT"]);
-
-        console.log("Hierarchy size:", root.descendants().length);
-
-        // -----------------------------
-        // TREE LAYOUT
-        // -----------------------------
         const treeLayout = d3.tree().nodeSize([50, 180]);
         treeLayout(root as any);
 
-        const nodes: any[] = [];
-        const links: any[] = [];
+        const nodes: GraphNode[] = [];
+        const links: GraphLink[] = [];
 
         root.descendants().forEach((d: any) => {
           nodes.push({
@@ -100,26 +98,22 @@ export default function RepoGraph({ sessionId }: Props) {
             x: d.y,
             y: d.x,
             fx: d.y,
-            fy: d.x
+            fy: d.x,
           });
         });
 
         root.links().forEach((l: any) => {
           links.push({
             source: l.source.data.id,
-            target: l.target.data.id
+            target: l.target.data.id,
           });
         });
-
-        console.log("Final nodes:", nodes.length);
-        console.log("Final links:", links.length);
 
         setGraphData({ nodes, links });
 
         setTimeout(() => {
           fgRef.current?.zoomToFit(400, 100);
         }, 100);
-
       } catch (error) {
         console.error("Graph load error:", error);
       }
@@ -128,9 +122,6 @@ export default function RepoGraph({ sessionId }: Props) {
     if (sessionId) loadGraph();
   }, [sessionId]);
 
-  // -----------------------------
-  // Resize Handling
-  // -----------------------------
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -152,10 +143,8 @@ export default function RepoGraph({ sessionId }: Props) {
       ref={containerRef}
       className="relative w-full h-full bg-black overflow-hidden"
     >
-      {/* GLASS PANEL LAYER */}
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-2xl border border-white/10 rounded-none pointer-events-none" />
-  
-      {/* FORCE GRAPH */}
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-2xl border border-white/10 pointer-events-none" />
+
       <ForceGraph2D
         ref={fgRef}
         graphData={graphData}
@@ -170,25 +159,17 @@ export default function RepoGraph({ sessionId }: Props) {
         nodeCanvasObject={(node: any, ctx, globalScale) => {
           const label = node.name;
           const isFolder = node.type === "folder";
-  
+
           const fontSize = 14 / globalScale;
           const radius = isFolder ? 6 : 4;
-  
+
           ctx.beginPath();
           ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
-  
-          if (isFolder) {
-            ctx.fillStyle = "#06b6d4";
-            ctx.shadowColor = "rgba(6,182,212,0.7)";
-            ctx.shadowBlur = 12;
-          } else {
-            ctx.fillStyle = "#94a3b8";
-            ctx.shadowBlur = 0;
-          }
-  
+
+          ctx.fillStyle = isFolder ? "#06b6d4" : "#94a3b8";
           ctx.fill();
           ctx.shadowBlur = 0;
-  
+
           if (label) {
             ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
             ctx.textAlign = "left";
@@ -200,21 +181,8 @@ export default function RepoGraph({ sessionId }: Props) {
           }
         }}
       />
-  
-      {/* SUBTLE GLASS HIGHLIGHT */}
+
       <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-white/5 to-transparent" />
-  
-      {/* SOFT GRID */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-[0.03]"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
-  
-      {/* VIGNETTE */}
       <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_200px_rgba(0,0,0,0.8)]" />
     </div>
   );
