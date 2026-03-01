@@ -1,0 +1,66 @@
+import boto3
+import json
+
+dynamodb = boto3.resource("dynamodb")
+table = dynamodb.Table("codesaathi-sessions")
+
+
+def extract_params(event):
+    """Extract parameters from all Bedrock Agent formats."""
+    params = {}
+
+    if isinstance(event.get("parameters"), dict):
+        params.update(event["parameters"])
+
+    if isinstance(event.get("parameters"), list):
+        for p in event["parameters"]:
+            if "name" in p and "value" in p:
+                params[p["name"]] = p["value"]
+
+    try:
+        props = (
+            event["requestBody"]["content"]
+            ["application/json"]["properties"]
+        )
+        for p in props:
+            params[p["name"]] = p["value"]
+    except Exception:
+        pass
+
+    return params
+
+
+def lambda_handler(event, context):
+
+    params = extract_params(event)
+    session_id = params.get("sessionId")
+
+    if not session_id:
+        body = "Error: sessionId parameter missing."
+    else:
+        response = table.get_item(
+            Key={"sessionId": session_id}
+        )
+
+        item = response.get("Item", {})
+
+        body = json.dumps({
+            "graph": item.get("graph"),
+            "repoUrl": item.get("repoUrl"),
+            "indexName": item.get("indexName")
+        })
+
+    return {
+        "messageVersion": "1.0",
+        "response": {
+            "actionGroup": event["actionGroup"],
+            "function": event["function"],
+            "functionResponse": {
+                "responseBody": {
+                    "TEXT": {
+                        "body": body
+                    }
+                }
+            }
+        }
+    }

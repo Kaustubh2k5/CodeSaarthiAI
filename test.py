@@ -53,7 +53,7 @@ def main():
 
     print("\nSample symbols:\n")
 
-    for s in symbols[:10]:
+    for s in symbols[::]:
         print({
             "id": s.id,
             "type": s.type,

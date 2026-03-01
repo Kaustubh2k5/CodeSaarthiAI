@@ -21,12 +21,11 @@ def load_repo(repo_source):
     - local folder path
     """
 
-    # ✅ CASE 1 — Local folder (YOUR CURRENT TEST)
     if os.path.isdir(repo_source):
         print("Using local repository (no clone needed).")
         return os.path.abspath(repo_source)
 
-    # ✅ CASE 2 — Remote git repo
+
     os.makedirs(BASE_DIR, exist_ok=True)
 
     path = os.path.join(BASE_DIR, repo_id(repo_source))

@@ -6,7 +6,7 @@ class Symbol:
         self.type = type
         self.file = file
         self.language = language
-
+        self.source_code = ""  
         # optional but future-proof
         self.tenant_id = tenant_id
         self.repo_id = repo_id

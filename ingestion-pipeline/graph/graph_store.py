@@ -63,8 +63,13 @@ class GraphStore:
             self.flush_nodes()
 
     def save_edges(self, symbol):
-        for target in getattr(symbol, "resolved_calls", []):
-            self.edge_buffer.append((symbol.id, target))
+        # 1. Process Function/Method Calls
+        for target in getattr(symbol, "calls", []):
+            self.edge_buffer.append((symbol.id, target, 'calls'))
+
+        # 2. Process File/Module Imports
+        for imp in getattr(symbol, "imports", []):
+            self.edge_buffer.append((symbol.id, imp, 'imports'))
 
         if len(self.edge_buffer) >= self.batch_size:
             self.flush_edges()
@@ -74,60 +79,54 @@ class GraphStore:
     # ==========================================================
 
     def flush_nodes(self):
-        if not self.node_buffer:
-            return
-
+        if not self.node_buffer: return
         query_parts = ["g"]
-        # We no longer use a bindings dict
-
+        
         for symbol in self.node_buffer:
-            # Escape single quotes in strings to prevent query breakage
             s_id = str(symbol.id).replace("'", "\\'")
-            s_name = str(symbol.name).replace("'", "\\'")
-            s_type = str(symbol.type).replace("'", "\\'")
-            s_file = str(symbol.file).replace("'", "\\'")
-            s_desc = str(symbol.description or "").replace("'", "\\'")
-
+            
+            # Upsert the Symbol Node with expanded properties
             query_parts.append(f"""
-            .V().has('symbol','id','{s_id}')
-            .fold()
-            .coalesce(
-                unfold(),
-                addV('symbol').property('id','{s_id}')
-            )
-            .property('name','{s_name}')
-            .property('type','{s_type}')
-            .property('file','{s_file}')
-            .property('description','{s_desc}')
+            .V('{s_id}').fold().coalesce(unfold(), addV('symbol').property(T.id, '{s_id}'))
+            .property(single, 'name', '{symbol.name}')
+            .property(single, 'type', '{symbol.type}')
+            .property(single, 'language', '{symbol.language}')
+            .property(single, 'file', '{symbol.file}')
             """)
 
-        query = "".join(query_parts)
-        # Call submit without the bindings argument
-        self.client.submit(query).all().result()
-        print(f"[GraphStore] Flushed {len(self.node_buffer)} nodes")
+            # Add Framework Tags as secondary nodes
+            for tag in getattr(symbol, "framework_tags", []):
+                tag_id = f"tag:{tag.lower()}"
+                query_parts.append(f"""
+                .V('{tag_id}').fold().coalesce(unfold(), addV('framework').property(T.id, '{tag_id}').property('name', '{tag}'))
+                .addE('tagged_with').from(V('{s_id}'))
+                """)
+        
+        self.client.submit("".join(query_parts)).all().result()
         self.node_buffer.clear()
 
     def flush_edges(self):
-        if not self.edge_buffer:
-            return
-
+        if not self.edge_buffer: return
         query_parts = ["g"]
-        for source, target in self.edge_buffer:
+        
+        for item in self.edge_buffer:
+            # Defensive unpacking
+            source = item[0]
+            target = item[1]
+            label = item[2] if len(item) > 2 else 'calls'
+
             s_src = str(source).replace("'", "\\'")
             s_tgt = str(target).replace("'", "\\'")
 
             query_parts.append(f"""
-            .V().has('symbol','id','{s_src}').as('a')
-            .V().has('symbol','id','{s_tgt}')
+            .V('{s_src}').as('src').V('{s_tgt}').as('tgt')
             .coalesce(
-                __.inE('calls').where(outV().as('a')),
-                addE('calls').from('a')
+                __.select('src').outE('{label}').where(inV().as('tgt')),
+                __.select('src').addE('{label}').to(__.select('tgt'))
             )
             """)
 
-        query = "".join(query_parts)
-        self.client.submit(query).all().result()
-        print(f"[GraphStore] Flushed {len(self.edge_buffer)} edges")
+        self.client.submit("".join(query_parts)).all().result()
         self.edge_buffer.clear()
 
     # ==========================================================
